@@ -1,10 +1,14 @@
 package com.example.zxb.videoplayer;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Path;
+import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
@@ -13,17 +17,20 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.support.annotation.BoolRes;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.OrientationEventListener;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.MediaController;
@@ -47,13 +54,20 @@ public class MainActivity extends AppCompatActivity {
     private SeekBar mSbSound;
     private ImageView mIvScreen;
     private RelativeLayout mRlApp;
+    private FrameLayout mFlProgress;
+    private CircleProgress mCpProgress;
 
     private AudioManager mAudioManager;
     private boolean isFullScreen;
-    private boolean isAdjust = false;
-    private float threshold = 54;
+    private boolean isAdjustLight = false;
+    private boolean isAdjustProgress = false;
+    private float threshold = 100;
     private int mScreenWidth, mScreenHeight;
     private float lastX = 0, lastY = 0;
+    private int mCurrentVolume = 0;
+    private float mCurrentLight = 0;
+    private float mCurrentProgress = 0;
+    private boolean isTouch = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,6 +97,10 @@ public class MainActivity extends AppCompatActivity {
         mSbSound = (SeekBar) findViewById(R.id.sb_sound);
         mIvScreen = (ImageView) findViewById(R.id.iv_screen);
         mRlApp = (RelativeLayout) findViewById(R.id.rl_app);
+        mFlProgress = (FrameLayout) findViewById(R.id.fl_progress);
+        mCpProgress = (CircleProgress) findViewById(R.id.cp_progress);
+
+        mCpProgress.setVisibility(View.GONE);
     }
 
     private void bindData() {
@@ -112,6 +130,16 @@ public class MainActivity extends AppCompatActivity {
         int streamVolume = mAudioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
         mSbSound.setMax(maxVolume);
         mSbSound.setProgress(streamVolume);
+
+        try {
+            int light = Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS);
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.screenBrightness = light*1.0f/255;
+            getWindow().setAttributes(lp);
+        } catch (Settings.SettingNotFoundException e) {
+            e.printStackTrace();
+        }
+
     }
 
     private void setPlayEvent() {
@@ -178,11 +206,18 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View v) {
                 if (isFullScreen){
                     setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-                    mIvScreen.setImageResource(R.drawable.reduce);
+                    mIvScreen.setImageResource(R.drawable.upstep);
                 } else {
                     setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
-                    mIvScreen.setImageResource(R.drawable.upstep);
+                    mIvScreen.setImageResource(R.drawable.reduce);
                 }
+            }
+        });
+
+        mLlController.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                return true;
             }
         });
 
@@ -195,43 +230,61 @@ public class MainActivity extends AppCompatActivity {
                     case MotionEvent.ACTION_DOWN:
                         lastX = x;
                         lastY = y;
+                        mCurrentVolume = mAudioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+                        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+                        mCurrentLight = attributes.screenBrightness;
+
+                        mCurrentProgress = mVideoView.getCurrentPosition();
+
+                        if (x < mScreenWidth/2){
+                            mCpProgress.setProgress((int) (mCurrentLight * 360));
+                            Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.light);
+                            mCpProgress.setBitmap(bitmap);
+                        } else {
+                            mCpProgress.setProgress(mCurrentVolume * 360 /15);
+                            Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.sound);
+                            mCpProgress.setBitmap(bitmap);
+                        }
                         break;
                     case MotionEvent.ACTION_MOVE:
-//                        Log.i("main", "x = " + lastX + " : y = " + lastY);
                         float detlaX = x - lastX;
                         float detalY = y - lastY;
-//                        Log.i("main", "x = " + x + " : y = " + y);
                         float absdetlaX = Math.abs(detlaX);
                         float absdetlaY = Math.abs(detalY);
-//                        Log.i("main", "x = " + absdetlaX + " : y = " + absdetlaY);
 
                         if (absdetlaX > threshold && absdetlaY > threshold){
                             if (absdetlaX < absdetlaY){
-                                //adjust the light or
-                                isAdjust = true;
+                                //adjust the light or sound
+                                isAdjustLight = true;
                             } else {
                                 //adjust the progress
-                                isAdjust = false;
+                                isAdjustProgress = true;
                             }
                         } else if (absdetlaX < threshold && absdetlaY > threshold){
-                            isAdjust = true;
+                            isAdjustLight = true;
                         } else if (absdetlaX > threshold && absdetlaY < threshold){
-                            isAdjust = false;
+                            isAdjustProgress = true;
                         }
 
-                        if (isAdjust){
+                        if (isAdjustLight && !isAdjustProgress){
+                            mCpProgress.setVisibility(View.VISIBLE);
                             if (x < mScreenWidth/2){
-
+                                changeLight(-detalY, mCurrentLight);
                             } else {
-                                changeVolume(-detalY);
+                                changeVolume(-detalY, mCurrentVolume);
                             }
                         }
-
-//                        lastX = x;
-//                        lastY = y;
+                        if (isAdjustProgress && !isAdjustLight){
+                            mUiHandler.sendEmptyMessage(UPDATE_UI);
+                            changeProgress(detlaX, mCurrentProgress);
+                        }
 
                         break;
                     case MotionEvent.ACTION_UP:
+                        mCpProgress.setVisibility(View.GONE);
+                        isAdjustLight = false;
+                        isAdjustProgress = false;
                         break;
                 }
 
@@ -240,17 +293,49 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void changeVolume(float detlaY){
+    private void changeVolume(float detlaY, int current){
         int max = mAudioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-        int current = mAudioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
-        int index = (int) ((current / max * mScreenHeight + detlaY) / mScreenHeight * 15);
+        float radio = detlaY/mScreenHeight;
+        int progress = (int) (radio*360+current*360/max);
 
-//        int index = (int) (detlaY/mScreenHeight*max);
-        int volume = Math.max(index, 0);
+        int volume = (int) (radio*max + current);
 
-        Log.i("main", " index == " + index) ;
+        if (progress > 360){
+            progress = 360;
+        } else if (progress < 0){
+            progress = 0;
+        }
+
         mAudioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0);
         mSbSound.setProgress(volume);
+
+        mCpProgress.setProgress(progress);
+    }
+
+    private void changeLight(float detlaY, float current){
+        float radio = detlaY/mScreenHeight;
+        current += radio;
+        if (current > 1.0f){
+            current = 1.0f;
+        } else if (current < 0.001f){
+            current = 0.01f;
+        }
+
+        int progress = (int) (current*360);
+
+        mCpProgress.setProgress(progress);
+
+        WindowManager.LayoutParams attributes = getWindow().getAttributes();
+        attributes.screenBrightness = current;
+        getWindow().setAttributes(attributes);
+
+    }
+
+    private void changeProgress(float detlaX, float current){
+        float radio = detlaX/mScreenWidth;
+        int progress = (int) (radio * mVideoView.getDuration() + current);
+        mVideoView.seekTo(progress);
+        mSbProgress.setProgress(progress);
     }
 
     private Handler mUiHandler = new Handler(){

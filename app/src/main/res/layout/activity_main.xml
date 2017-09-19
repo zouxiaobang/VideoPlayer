@@ -16,6 +16,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_centerInParent="true"/>
+        <include layout="@layout/layout_progress"/>
         <LinearLayout
             android:id="@+id/ll_controllerbar"
             android:layout_width="match_parent"
@@ -28,10 +29,11 @@
                 android:layout_marginRight="-20dp"
                 android:indeterminate="false"
                 android:progress="20"
-                android:max="100"
+                android:max="360"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"/>
             <RelativeLayout
+                android:id="@+id/rl_controller"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
