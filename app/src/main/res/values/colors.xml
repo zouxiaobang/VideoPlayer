@@ -3,4 +3,7 @@
     <color name="colorPrimary">#5f78ff</color>
     <color name="colorPrimaryDark">#303F9F</color>
     <color name="colorAccent">#FF4081</color>
+
+    <color name="colorPagePoint">#d4d2d2</color>
+    <color name="colorMovePoint">#ffffff</color>
 </resources>
